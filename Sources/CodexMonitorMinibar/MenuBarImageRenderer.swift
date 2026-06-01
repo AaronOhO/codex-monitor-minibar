@@ -19,7 +19,7 @@ struct MenuBarImageRenderer {
         let fiveHourText = quotaText(label: "5H", quota: snapshot?.fiveHour)
         let weeklyText = quotaText(label: "WK", quota: snapshot?.weekly)
         let text = "\(dailyText) | \(fiveHourText) | \(weeklyText)"
-        let horizontalPadding: CGFloat = 10
+        let horizontalPadding: CGFloat = 9
         let activityWidth: CGFloat = 14
         let activityGap: CGFloat = 5
         let activityCenterOffsetX: CGFloat = -4
