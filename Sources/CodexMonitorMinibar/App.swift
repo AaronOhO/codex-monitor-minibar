@@ -251,23 +251,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let defaults = UserDefaults.standard
-        let storedDayKey = defaults.string(forKey: Self.weeklyUsageDayKey)
-        let storedBaseline = storedWeeklyUsageBaseline(defaults: defaults)
-        let storedState: DailyWeeklyUsageState?
-        if let storedDayKey, let storedBaseline {
-            storedState = DailyWeeklyUsageState(dayKey: storedDayKey, baselineUsedPercent: storedBaseline)
-        } else {
-            storedState = nil
-        }
+        let dayKey = todayKey()
+        let storedState = storedWeeklyUsageState(defaults: defaults)
+        let persistedState = persistedWeeklyUsageState()
+        let mergedState = DailyWeeklyUsageTracker.mergedState(
+            primary: persistedState,
+            fallback: storedState,
+            dayKey: dayKey
+        )
 
         let result = DailyWeeklyUsageTracker.update(
             currentUsedPercent: quota.usedPercent,
-            state: storedState,
-            dayKey: todayKey()
+            state: mergedState,
+            dayKey: dayKey
         )
         defaults.set(result.state.dayKey, forKey: Self.weeklyUsageDayKey)
         defaults.set(result.state.baselineUsedPercent, forKey: Self.weeklyUsageBaselineKey)
+        persistWeeklyUsageState(result.state)
         return result.usedTodayPercent
+    }
+
+    private func storedWeeklyUsageState(defaults: UserDefaults) -> DailyWeeklyUsageState? {
+        guard
+            let storedDayKey = defaults.string(forKey: Self.weeklyUsageDayKey),
+            let storedBaseline = storedWeeklyUsageBaseline(defaults: defaults)
+        else {
+            return nil
+        }
+        return DailyWeeklyUsageState(dayKey: storedDayKey, baselineUsedPercent: storedBaseline)
     }
 
     private func storedWeeklyUsageBaseline(defaults: UserDefaults) -> Double? {
@@ -279,6 +290,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return Double(intValue)
         }
         return nil
+    }
+
+    private func persistedWeeklyUsageState() -> DailyWeeklyUsageState? {
+        guard let data = try? Data(contentsOf: weeklyUsageStateURL()) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(DailyWeeklyUsageState.self, from: data)
+    }
+
+    private func persistWeeklyUsageState(_ state: DailyWeeklyUsageState) {
+        do {
+            let url = weeklyUsageStateURL()
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(state)
+            try data.write(to: url, options: .atomic)
+        } catch {
+        }
+    }
+
+    private func weeklyUsageStateURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex-monitor-minibar", isDirectory: true)
+            .appendingPathComponent("weekly-usage.json")
     }
 
     private func todayKey() -> String {

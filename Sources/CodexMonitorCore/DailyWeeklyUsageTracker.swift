@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DailyWeeklyUsageState: Equatable {
+public struct DailyWeeklyUsageState: Codable, Equatable {
     public let dayKey: String
     public let baselineUsedPercent: Double
 
@@ -20,6 +20,22 @@ public struct DailyWeeklyUsageResult: Equatable {
 }
 
 public enum DailyWeeklyUsageTracker {
+    public static func mergedState(
+        primary: DailyWeeklyUsageState?,
+        fallback: DailyWeeklyUsageState?,
+        dayKey: String
+    ) -> DailyWeeklyUsageState? {
+        let sameDayStates = [primary, fallback]
+            .compactMap { $0 }
+            .filter { $0.dayKey == dayKey }
+
+        if let earliestBaseline = sameDayStates.min(by: { $0.baselineUsedPercent < $1.baselineUsedPercent }) {
+            return earliestBaseline
+        }
+
+        return primary ?? fallback
+    }
+
     public static func update(
         currentUsedPercent: Double,
         state: DailyWeeklyUsageState?,

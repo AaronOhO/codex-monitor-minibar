@@ -163,6 +163,21 @@ func testDailyWeeklyUsageTracksIncreaseFromTodayBaseline() throws {
     try expect(result.state == state, "expected same-day baseline to stay stable")
 }
 
+func testDailyWeeklyUsageUsesEarlierSameDayMigratedBaseline() throws {
+    let currentState = DailyWeeklyUsageState(dayKey: "2026-06-01", baselineUsedPercent: 6)
+    let migratedState = DailyWeeklyUsageState(dayKey: "2026-06-01", baselineUsedPercent: 0)
+
+    let state = DailyWeeklyUsageTracker.mergedState(
+        primary: currentState,
+        fallback: migratedState,
+        dayKey: "2026-06-01"
+    )
+    let result = DailyWeeklyUsageTracker.update(currentUsedPercent: 8, state: state, dayKey: "2026-06-01")
+
+    try expect(result.usedTodayPercent == 8, "expected migrated same-day baseline to restore full today usage")
+    try expect(result.state.baselineUsedPercent == 0, "expected earlier same-day baseline to be preserved")
+}
+
 func testDailyWeeklyUsageClampsWhenCurrentFallsBelowBaseline() throws {
     let state = DailyWeeklyUsageState(dayKey: "2026-05-31", baselineUsedPercent: 70)
 
@@ -351,6 +366,7 @@ let tests = [
     ("reset countdown", testFormatsResetCountdownCompactly),
     ("daily weekly first observation", testDailyWeeklyUsageStartsAtZeroForFirstObservation),
     ("daily weekly increase", testDailyWeeklyUsageTracksIncreaseFromTodayBaseline),
+    ("daily weekly migrated baseline", testDailyWeeklyUsageUsesEarlierSameDayMigratedBaseline),
     ("daily weekly clamp", testDailyWeeklyUsageClampsWhenCurrentFallsBelowBaseline),
     ("daily weekly new day", testDailyWeeklyUsageResetsBaselineOnNewDay),
     ("daily weekly percent text", testDailyWeeklyUsageFormatsPercentAsWholePercent),
