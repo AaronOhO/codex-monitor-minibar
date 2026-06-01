@@ -122,7 +122,7 @@ private final class CodexAppServerRPC {
             params: [
                 "clientInfo": [
                     "name": "CodexMonitorMinibar",
-                    "version": "0.1.0"
+                    "version": "0.1.1"
                 ]
             ],
             timeoutSeconds: max(timeoutSeconds, 10)
