@@ -22,7 +22,7 @@ struct MenuBarImageRenderer {
         let horizontalPadding: CGFloat = 10
         let activityWidth: CGFloat = 14
         let activityGap: CGFloat = 5
-        let activityCenterOffsetX: CGFloat = -2
+        let activityCenterOffsetX: CGFloat = -4
         let textWidth = textWidth(text, attributes: textAttributes)
         let size = NSSize(
             width: horizontalPadding * 2 + activityWidth + activityGap + textWidth,
