@@ -20,7 +20,7 @@ struct MenuBarImageRenderer {
         let weeklyText = quotaText(label: "WK", quota: snapshot?.weekly)
         let text = "\(dailyText) | \(fiveHourText) | \(weeklyText)"
         let horizontalPadding: CGFloat = 10
-        let activityWidth: CGFloat = 11
+        let activityWidth: CGFloat = 14
         let activityGap: CGFloat = 5
         let textWidth = textWidth(text, attributes: textAttributes)
         let size = NSSize(
@@ -93,7 +93,7 @@ struct MenuBarImageRenderer {
     }
 
     private static func drawActivityDot(status: CodexActivityStatus, center: NSPoint) {
-        let diameter: CGFloat = 8.5
+        let diameter: CGFloat = 12.75
         let rect = NSRect(
             x: center.x - diameter / 2,
             y: center.y - diameter / 2,
