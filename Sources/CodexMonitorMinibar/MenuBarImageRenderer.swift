@@ -22,6 +22,7 @@ struct MenuBarImageRenderer {
         let horizontalPadding: CGFloat = 10
         let activityWidth: CGFloat = 14
         let activityGap: CGFloat = 5
+        let activityCenterOffsetX: CGFloat = -2
         let textWidth = textWidth(text, attributes: textAttributes)
         let size = NSSize(
             width: horizontalPadding * 2 + activityWidth + activityGap + textWidth,
@@ -34,7 +35,7 @@ struct MenuBarImageRenderer {
         NSRect(origin: .zero, size: size).fill()
 
         drawQuotaBorder(size: size, usedPercent: snapshot?.fiveHour?.usedPercent)
-        drawActivityDot(status: activityStatus, center: NSPoint(x: horizontalPadding + activityWidth / 2, y: size.height / 2))
+        drawActivityDot(status: activityStatus, center: NSPoint(x: horizontalPadding + activityWidth / 2 + activityCenterOffsetX, y: size.height / 2))
         text.draw(at: NSPoint(x: horizontalPadding + activityWidth + activityGap, y: 4), withAttributes: textAttributes)
 
         image.unlockFocus()
