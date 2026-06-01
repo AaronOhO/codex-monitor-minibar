@@ -1,0 +1,392 @@
+Scripts/generate_app_icon.swift
+  8ec7df3f171355f2 1-284
+Sources/CodexMonitorMinibar/App.swift
+  8ec7df3f171355f2 11-13,16,27,29-30,38-42,47-48,120-121,147,153,168-179,204-247,290-357
+  e9a1f12354d0dc1b 1-10,14-15,17-26,28,31-37,43-46,49-119,122-146,148-152,154-167,180-203,248-289,358-370
+Sources/CodexMonitorCore/DailyWeeklyUsageTracker.swift
+  8ec7df3f171355f2 45
+  e9a1f12354d0dc1b 1-44,46-47
+README.zh-CN.md
+  8ec7df3f171355f2 1-187
+Sources/CodexMonitorHookBridge/main.swift
+  8ec7df3f171355f2 1-33
+Sources/CodexMonitorCore/ResetCountdownFormatter.swift
+  e9a1f12354d0dc1b 1-35
+Sources/CodexMonitorCore/CodexActivity.swift
+  8ec7df3f171355f2 1-175
+Scripts/package_app.sh
+  e9a1f12354d0dc1b 1-7,9-10,13,15-16,18,22-32,34-35,38-58
+  8ec7df3f171355f2 8,11-12,14,17,19-21,33,36-37
+Sources/CodexMonitorCore/CodexHookInstaller.swift
+  8ec7df3f171355f2 1-149
+Sources/CodexMonitorCore/CodexRateLimitClient.swift
+  8ec7df3f171355f2 42-53,57,80-85,100
+  e9a1f12354d0dc1b 1-41,54-56,58-79,86-99,101-266
+README.md
+  8ec7df3f171355f2 1-187
+.gitignore
+  e9a1f12354d0dc1b 1-4
+Sources/CodexMonitorMinibar/MenuBarImageRenderer.swift
+  e9a1f12354d0dc1b 1-7,10,30-35,39-44,46,48,50-51,55,57-60,151-152
+  8ec7df3f171355f2 8-9,11-29,36-38,45,47,49,52-54,56,61-150
+Sources/CodexMonitorCore/RateLimitSnapshot.swift
+  e9a1f12354d0dc1b 1-117
+Package.swift
+  e9a1f12354d0dc1b 1-10,13-22,28-36
+  8ec7df3f171355f2 11-12,23-27
+Sources/CodexMonitorCoreTestRunner/main.swift
+  e9a1f12354d0dc1b 1,3-183,188-189,346-355,362-386,388-392
+  8ec7df3f171355f2 2,184-187,190-345,356-361,387
+Sources/CodexMonitorCore/CodexHookSocket.swift
+  8ec7df3f171355f2 1-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8-ntes.8",
+  "base_commit_sha": "6383b9cac327b7b35c11a1bcc9e43294b5399ccf",
+  "prompts": {
+    "8ec7df3f171355f2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7e83-d8ae-78b2-a00c-863aeb16916d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "AaronOhO",
+      "messages": [],
+      "total_additions": 1972,
+      "total_deletions": 348,
+      "accepted_lines": 1695,
+      "overriden_lines": 0,
+      "per_file_stats": {
+        "Scripts/generate_app_icon.swift": {
+          "additions": 376,
+          "deletions": 92,
+          "accepted_lines": 284
+        },
+        "Sources/CodexMonitorCore/DailyWeeklyUsageTracker.swift": {
+          "additions": 1,
+          "deletions": 1,
+          "accepted_lines": 1
+        },
+        "Sources/CodexMonitorCore/CodexRateLimitClient.swift": {
+          "additions": 27,
+          "deletions": 9,
+          "accepted_lines": 20
+        },
+        "Sources/CodexMonitorCore/CodexHookInstaller.swift": {
+          "additions": 149,
+          "accepted_lines": 149
+        },
+        "Sources/CodexMonitorMinibar/App.swift": {
+          "additions": 218,
+          "deletions": 86,
+          "accepted_lines": 142
+        },
+        "Sources/CodexMonitorCore/CodexActivity.swift": {
+          "additions": 176,
+          "deletions": 1,
+          "accepted_lines": 175
+        },
+        "Sources/CodexMonitorMinibar/MenuBarImageRenderer.swift": {
+          "additions": 180,
+          "deletions": 110,
+          "accepted_lines": 121
+        },
+        "Sources/CodexMonitorHookBridge/main.swift": {
+          "additions": 34,
+          "deletions": 1,
+          "accepted_lines": 33
+        },
+        "README.md": {
+          "additions": 196,
+          "deletions": 9,
+          "accepted_lines": 187
+        },
+        "README.zh-CN.md": {
+          "additions": 196,
+          "deletions": 9,
+          "accepted_lines": 187
+        },
+        "Package.swift": {
+          "additions": 7,
+          "deletions": 1,
+          "accepted_lines": 7
+        },
+        "Sources/CodexMonitorCoreTestRunner/main.swift": {
+          "additions": 189,
+          "deletions": 26,
+          "accepted_lines": 168
+        },
+        "Scripts/package_app.sh": {
+          "additions": 11,
+          "deletions": 1,
+          "accepted_lines": 11
+        },
+        "Sources/CodexMonitorCore/CodexHookSocket.swift": {
+          "additions": 212,
+          "deletions": 2,
+          "accepted_lines": 210
+        }
+      }
+    },
+    "e9a1f12354d0dc1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7e1e-c5e9-7c92-8cfd-02b2b251f692",
+        "model": "gpt-5.5"
+      },
+      "human_author": "AaronOhO",
+      "messages": [],
+      "total_additions": 7498,
+      "total_deletions": 1788,
+      "accepted_lines": 3724,
+      "overriden_lines": 54,
+      "per_file_stats": {
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.build/output-file-map.json": {
+          "additions": 18,
+          "deletions": 6,
+          "accepted_lines": 12
+        },
+        ".build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt": {
+          "additions": 2,
+          "accepted_lines": 2
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/sources": {
+          "additions": 2,
+          "accepted_lines": 2
+        },
+        "Sources/CodexMonitorCore/CodexRateLimitClient.swift": {
+          "additions": 288,
+          "deletions": 40,
+          "accepted_lines": 246
+        },
+        ".build/arm64-apple-macosx/debug/Modules/CodexMonitorCoreTestRunner.abi.json": {
+          "additions": 9,
+          "accepted_lines": 9
+        },
+        "Sources/CodexMonitorCore/DailyWeeklyUsageTracker.swift": {
+          "additions": 53,
+          "deletions": 6,
+          "accepted_lines": 46
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibarPackageTests.build/output-file-map.json": {
+          "additions": 12,
+          "accepted_lines": 12
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibarPackageTests.build/include/module.modulemap": {
+          "additions": 3,
+          "accepted_lines": 3
+        },
+        "Tests/CodexMonitorCoreTests/RateLimitParserTests.swift": {
+          "additions": 105,
+          "deletions": 23
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.build/CodexMonitorCoreTestRunner.emit-module.d": {
+          "additions": 3,
+          "accepted_lines": 3
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.dSYM/Contents/Resources/Relocations/aarch64/CodexMonitorMinibar.yml": {
+          "additions": 684,
+          "accepted_lines": 5
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.dSYM/Contents/Info.plist": {
+          "additions": 20,
+          "accepted_lines": 20
+        },
+        ".superpowers/brainstorm/86063-1780234754/content/waiting-5h-reset.html": {
+          "additions": 3,
+          "accepted_lines": 3
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.build/App.d": {
+          "additions": 1,
+          "overriden_lines": 1
+        },
+        ".build/arm64-apple-macosx/debug/description.json": {
+          "additions": 868,
+          "deletions": 242,
+          "accepted_lines": 620,
+          "overriden_lines": 4
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.build/CodexMonitorMinibar.emit-module.d": {
+          "additions": 12,
+          "deletions": 9,
+          "overriden_lines": 3
+        },
+        "Sources/CodexMonitorCore/ResetCountdownFormatter.swift": {
+          "additions": 35,
+          "accepted_lines": 35
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.dSYM/Contents/Info.plist": {
+          "additions": 20,
+          "accepted_lines": 20
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/RateLimitSnapshot.d": {
+          "additions": 2,
+          "deletions": 1,
+          "overriden_lines": 1
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibarPackageTests.build/sources": {
+          "additions": 1,
+          "accepted_lines": 1
+        },
+        ".build/workspace-state.json": {
+          "additions": 14,
+          "accepted_lines": 14
+        },
+        "Sources/CodexMonitorCoreTestRunner/main.swift": {
+          "additions": 397,
+          "deletions": 168,
+          "accepted_lines": 224
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/CodexRateLimitClient.d": {
+          "additions": 1,
+          "overriden_lines": 1
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTests.build/output-file-map.json": {
+          "additions": 12,
+          "accepted_lines": 12
+        },
+        "Sources/CodexMonitorCore/RateLimitSnapshot.swift": {
+          "additions": 123,
+          "deletions": 6,
+          "accepted_lines": 117
+        },
+        "Sources/CodexMonitorMinibar/App.swift": {
+          "additions": 356,
+          "deletions": 118,
+          "accepted_lines": 228
+        },
+        "Sources/CodexMonitorCore/ThreadTaskSummary.swift": {
+          "additions": 389,
+          "deletions": 95
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTests.build/CodexMonitorCoreTests.emit-module.d": {
+          "additions": 6,
+          "deletions": 3,
+          "accepted_lines": 3
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.build/output-file-map.json": {
+          "additions": 12,
+          "accepted_lines": 12
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar-entitlement.plist": {
+          "additions": 8,
+          "accepted_lines": 8
+        },
+        ".build/arm64-apple-macosx/debug/plugin-tools-description.json": {
+          "additions": 860,
+          "deletions": 240,
+          "accepted_lines": 614,
+          "overriden_lines": 4
+        },
+        ".build/plugin-tools.yaml": {
+          "additions": 242,
+          "deletions": 83,
+          "accepted_lines": 141,
+          "overriden_lines": 18
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.product/Objects.LinkFileList": {
+          "additions": 4,
+          "deletions": 1,
+          "accepted_lines": 3
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibarPackageTests.derived/runner.swift": {
+          "additions": 547,
+          "accepted_lines": 547
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.build/sources": {
+          "additions": 1,
+          "accepted_lines": 1
+        },
+        ".build/debug.yaml": {
+          "additions": 242,
+          "deletions": 83,
+          "accepted_lines": 141,
+          "overriden_lines": 18
+        },
+        "Package.swift": {
+          "additions": 33,
+          "deletions": 3,
+          "accepted_lines": 29
+        },
+        ".superpowers/brainstorm/86063-1780234754/content/five-hour-reset-layouts.html": {
+          "additions": 139,
+          "accepted_lines": 139
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.product/Objects.LinkFileList": {
+          "additions": 3,
+          "accepted_lines": 3
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.build/sources": {
+          "additions": 2,
+          "deletions": 1,
+          "accepted_lines": 1
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorMinibar.build/main.d": {
+          "additions": 2,
+          "deletions": 1
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.dSYM/Contents/Resources/Relocations/aarch64/CodexMonitorCoreTestRunner.yml": {
+          "additions": 1194,
+          "deletions": 532,
+          "accepted_lines": 5
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/output-file-map.json": {
+          "additions": 19,
+          "accepted_lines": 19
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/CodexMonitorCore.emit-module.d": {
+          "additions": 16,
+          "deletions": 12,
+          "overriden_lines": 4
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/include/CodexMonitorCore-Swift.h": {
+          "additions": 311,
+          "accepted_lines": 311
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner-entitlement.plist": {
+          "additions": 8,
+          "accepted_lines": 8
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCore.build/include/module.modulemap": {
+          "additions": 3,
+          "accepted_lines": 3
+        },
+        ".build/arm64-apple-macosx/debug/Modules/CodexMonitorMinibar.abi.json": {
+          "additions": 9,
+          "accepted_lines": 9
+        },
+        "Scripts/package_app.sh": {
+          "additions": 49,
+          "deletions": 1,
+          "accepted_lines": 47
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTests.build/sources": {
+          "additions": 1,
+          "accepted_lines": 1
+        },
+        ".build/arm64-apple-macosx/debug/Modules/CodexMonitorCore.abi.json": {
+          "additions": 9,
+          "accepted_lines": 9
+        },
+        "Sources/CodexMonitorMinibar/MenuBarImageRenderer.swift": {
+          "additions": 191,
+          "deletions": 109,
+          "accepted_lines": 31
+        },
+        ".build/arm64-apple-macosx/debug/CodexMonitorCoreTestRunner.build/main.d": {
+          "additions": 1,
+          "accepted_lines": 1
+        },
+        "Sources/CodexMonitorMinibar/main.swift": {
+          "additions": 149,
+          "deletions": 5
+        },
+        ".gitignore": {
+          "additions": 4,
+          "accepted_lines": 4
+        }
+      }
+    }
+  }
+}
