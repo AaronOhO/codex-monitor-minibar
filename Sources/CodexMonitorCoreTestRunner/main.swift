@@ -146,60 +146,178 @@ func testFormatsResetCountdownCompactly() throws {
     )
 }
 
-func testDailyWeeklyUsageStartsAtZeroForFirstObservation() throws {
-    let result = DailyWeeklyUsageTracker.update(currentUsedPercent: 4.25, state: nil, dayKey: "2026-05-31")
+func testLocalTokenUsageIndexesAndSkipsUnchangedFiles() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let sessionsDirectory = directory.appendingPathComponent("sessions/2026/05/25", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
 
-    try expect(result.usedTodayPercent == 0.0, "expected first observation to start at zero")
-    try expect(result.state.dayKey == "2026-05-31", "expected state day key to be saved")
-    try expect(result.state.baselineUsedPercent == 4.25, "expected current used percent as baseline")
-}
+    let fileURL = sessionsDirectory.appendingPathComponent("rollout.jsonl")
+    try (
+        tokenCountLine(timestamp: "2026-05-25T16:30:00Z", total: 100, input: 80, cached: 50, output: 20, reasoning: 5)
+            + #"{"timestamp":"2026-05-25T16:31:00Z","type":"response_item","payload":{}}"# + "\n"
+    ).write(to: fileURL, atomically: true, encoding: .utf8)
 
-func testDailyWeeklyUsageTracksIncreaseFromTodayBaseline() throws {
-    let state = DailyWeeklyUsageState(dayKey: "2026-05-31", baselineUsedPercent: 4.25)
-
-    let result = DailyWeeklyUsageTracker.update(currentUsedPercent: 7.75, state: state, dayKey: "2026-05-31")
-
-    try expect(result.usedTodayPercent == 3.5, "expected today usage delta")
-    try expect(result.state == state, "expected same-day baseline to stay stable")
-}
-
-func testDailyWeeklyUsageUsesEarlierSameDayMigratedBaseline() throws {
-    let currentState = DailyWeeklyUsageState(dayKey: "2026-06-01", baselineUsedPercent: 6)
-    let migratedState = DailyWeeklyUsageState(dayKey: "2026-06-01", baselineUsedPercent: 0)
-
-    let state = DailyWeeklyUsageTracker.mergedState(
-        primary: currentState,
-        fallback: migratedState,
-        dayKey: "2026-06-01"
+    let store = CodexLocalTokenUsageStore(
+        codexHomeURL: directory,
+        stateURL: directory.appendingPathComponent("index.json"),
+        calendar: calendar(timeZoneOffsetHours: 8)
     )
-    let result = DailyWeeklyUsageTracker.update(currentUsedPercent: 8, state: state, dayKey: "2026-06-01")
 
-    try expect(result.usedTodayPercent == 8, "expected migrated same-day baseline to restore full today usage")
-    try expect(result.state.baselineUsedPercent == 0, "expected earlier same-day baseline to be preserved")
+    let first = try store.refresh()
+    try expect(first.indexedFileCount == 1, "expected one indexed file")
+    try expect(first.processedFileCount == 1, "expected initial scan to process one file")
+    try expect(first.usage(for: "2026-05-26").totalTokens == 100, "expected token event to use local day")
+    try expect(first.usage(for: "2026-05-26").cachedInputTokens == 50, "expected cached tokens parsed")
+
+    let second = try store.refresh()
+    try expect(second.processedFileCount == 0, "expected unchanged file to be skipped")
+    try expect(second.processedByteCount == 0, "expected unchanged file to read no bytes")
+    try expect(second.usage(for: "2026-05-26").totalTokens == 100, "expected cached index result")
 }
 
-func testDailyWeeklyUsageClampsWhenCurrentFallsBelowBaseline() throws {
-    let state = DailyWeeklyUsageState(dayKey: "2026-05-31", baselineUsedPercent: 70)
+func testLocalTokenUsageProcessesOnlyAppendedCompleteLines() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let sessionsDirectory = directory.appendingPathComponent("sessions/2026/05/25", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
 
-    let result = DailyWeeklyUsageTracker.update(currentUsedPercent: 2, state: state, dayKey: "2026-05-31")
+    let fileURL = sessionsDirectory.appendingPathComponent("rollout.jsonl")
+    try tokenCountLine(timestamp: "2026-05-25T01:00:00Z", total: 100, input: 80, cached: 20, output: 20, reasoning: 5)
+        .write(to: fileURL, atomically: true, encoding: .utf8)
 
-    try expect(result.usedTodayPercent == 0, "expected negative delta clamp")
+    let store = CodexLocalTokenUsageStore(
+        codexHomeURL: directory,
+        stateURL: directory.appendingPathComponent("index.json"),
+        calendar: calendar(timeZoneOffsetHours: 0)
+    )
+
+    _ = try store.refresh()
+    try append(tokenCountLine(timestamp: "2026-05-25T02:00:00Z", total: 200, input: 180, cached: 40, output: 20, reasoning: 10), to: fileURL)
+
+    let appended = try store.refresh()
+    try expect(appended.processedFileCount == 1, "expected appended file to be processed")
+    try expect(appended.usage(for: "2026-05-25").totalTokens == 300, "expected appended token event once")
+
+    try append(
+        #"{"timestamp":"2026-05-25T03:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":280,"cached_input_tokens":70,"output_tokens":20,"reasoning_output_tokens":10,"total_tokens":300}}}}"#,
+        to: fileURL
+    )
+    let incomplete = try store.refresh()
+    try expect(incomplete.usage(for: "2026-05-25").totalTokens == 300, "expected incomplete line to be ignored")
+
+    try append("\n", to: fileURL)
+    let completed = try store.refresh()
+    try expect(completed.usage(for: "2026-05-25").totalTokens == 600, "expected completed line to be indexed")
 }
 
-func testDailyWeeklyUsageResetsBaselineOnNewDay() throws {
-    let state = DailyWeeklyUsageState(dayKey: "2026-05-30", baselineUsedPercent: 4)
+func testLocalTokenUsagePrefersTotalDeltaWhenLastUsageIsOverstated() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let sessionsDirectory = directory.appendingPathComponent("sessions/2026/06/02", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
 
-    let result = DailyWeeklyUsageTracker.update(currentUsedPercent: 9, state: state, dayKey: "2026-05-31")
+    let fileURL = sessionsDirectory.appendingPathComponent("rollout.jsonl")
+    let first = tokenCountLine(
+        timestamp: "2026-06-02T01:00:00Z",
+        lastUsage: tokenUsageJSON(total: 100, input: 80, cached: 20, output: 20, reasoning: 5),
+        totalUsage: tokenUsageJSON(total: 100, input: 80, cached: 20, output: 20, reasoning: 5)
+    )
+    let overstatedLast = tokenCountLine(
+        timestamp: "2026-06-02T02:00:00Z",
+        lastUsage: tokenUsageJSON(total: 1_000, input: 900, cached: 100, output: 100, reasoning: 50),
+        totalUsage: tokenUsageJSON(total: 160, input: 140, cached: 25, output: 20, reasoning: 5)
+    )
+    try (first + overstatedLast).write(to: fileURL, atomically: true, encoding: .utf8)
 
-    try expect(result.usedTodayPercent == 0, "expected new day to start at zero")
-    try expect(result.state.dayKey == "2026-05-31", "expected new day key")
-    try expect(result.state.baselineUsedPercent == 9, "expected new day baseline")
+    let store = CodexLocalTokenUsageStore(
+        codexHomeURL: directory,
+        stateURL: directory.appendingPathComponent("index.json"),
+        calendar: calendar(timeZoneOffsetHours: 0)
+    )
+
+    let snapshot = try store.refresh()
+    let usage = snapshot.usage(for: "2026-06-02")
+    try expect(usage.totalTokens == 160, "expected cumulative total delta instead of overstated last usage")
+    try expect(usage.inputTokens == 140, "expected input to follow cumulative total delta")
+    try expect(usage.cachedInputTokens == 25, "expected cached input to follow cumulative total delta")
 }
 
-func testDailyWeeklyUsageFormatsPercentAsWholePercent() throws {
-    try expect(DailyWeeklyUsageText.percent(0) == "0%", "expected zero as whole percent")
-    try expect(DailyWeeklyUsageText.percent(1.234) == "1%", "expected whole percent rounding down")
-    try expect(DailyWeeklyUsageText.percent(1.5) == "2%", "expected whole percent rounding up")
+func testLocalTokenUsageSubtractsForkParentTotals() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let parentDirectory = directory.appendingPathComponent("sessions/2026/06/01", isDirectory: true)
+    let childDirectory = directory.appendingPathComponent("sessions/2026/06/02", isDirectory: true)
+    try FileManager.default.createDirectory(at: parentDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: childDirectory, withIntermediateDirectories: true)
+
+    let parentURL = parentDirectory.appendingPathComponent("parent.jsonl")
+    let childURL = childDirectory.appendingPathComponent("child.jsonl")
+    try (
+        sessionMetaLine(sessionID: "parent-session", forkedFromID: nil, timestamp: "2026-06-01T10:00:00Z")
+            + tokenCountLine(
+                timestamp: "2026-06-01T10:01:00Z",
+                lastUsage: nil,
+                totalUsage: tokenUsageJSON(total: 100, input: 100, cached: 20, output: 0, reasoning: 0)
+            )
+    ).write(to: parentURL, atomically: true, encoding: .utf8)
+    try (
+        sessionMetaLine(sessionID: "child-session", forkedFromID: "parent-session", timestamp: "2026-06-01T10:01:00Z")
+            + tokenCountLine(
+                timestamp: "2026-06-02T02:00:00Z",
+                lastUsage: nil,
+                totalUsage: tokenUsageJSON(total: 130, input: 125, cached: 20, output: 5, reasoning: 0)
+            )
+    ).write(to: childURL, atomically: true, encoding: .utf8)
+
+    let cutoff = Date(timeIntervalSince1970: 2_000)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000)], ofItemAtPath: parentURL.path)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 3_000)], ofItemAtPath: childURL.path)
+
+    let store = CodexLocalTokenUsageStore(
+        codexHomeURL: directory,
+        stateURL: directory.appendingPathComponent("index.json"),
+        calendar: calendar(timeZoneOffsetHours: 0)
+    )
+
+    let snapshot = try store.refresh(since: cutoff)
+    let usage = snapshot.usage(for: "2026-06-02")
+    try expect(snapshot.indexedFileCount == 1, "expected only child file in today's index")
+    try expect(usage.totalTokens == 30, "expected fork child to subtract inherited parent total")
+    try expect(usage.inputTokens == 25, "expected fork child input delta")
+    try expect(usage.outputTokens == 5, "expected fork child output delta")
+}
+
+func testLocalTokenUsageSkipsFilesOlderThanCutoff() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let sessionsDirectory = directory.appendingPathComponent("sessions/2026/06/02", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+
+    let oldFileURL = sessionsDirectory.appendingPathComponent("old.jsonl")
+    let newFileURL = sessionsDirectory.appendingPathComponent("new.jsonl")
+    try tokenCountLine(timestamp: "2026-06-02T01:00:00Z", total: 500, input: 400, cached: 100, output: 100, reasoning: 25)
+        .write(to: oldFileURL, atomically: true, encoding: .utf8)
+    try tokenCountLine(timestamp: "2026-06-02T02:00:00Z", total: 100, input: 80, cached: 20, output: 20, reasoning: 5)
+        .write(to: newFileURL, atomically: true, encoding: .utf8)
+
+    let cutoff = Date(timeIntervalSince1970: 2_000)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000)], ofItemAtPath: oldFileURL.path)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 3_000)], ofItemAtPath: newFileURL.path)
+
+    let store = CodexLocalTokenUsageStore(
+        codexHomeURL: directory,
+        stateURL: directory.appendingPathComponent("index.json"),
+        calendar: calendar(timeZoneOffsetHours: 0)
+    )
+
+    let snapshot = try store.refresh(since: cutoff)
+    try expect(snapshot.indexedFileCount == 1, "expected only the recent file to be indexed")
+    try expect(snapshot.processedFileCount == 1, "expected only the recent file to be processed")
+    try expect(snapshot.usage(for: "2026-06-02").totalTokens == 100, "expected old modified file to be skipped")
+}
+
+func testLocalTokenUsageCompactsCounts() throws {
+    try expect(LocalTokenUsageText.compact(9_999) == "9999", "expected small count unchanged")
+    try expect(LocalTokenUsageText.compact(12_300) == "12.3K", "expected K formatting")
+    try expect(LocalTokenUsageText.compact(1_234_000) == "1.23M", "expected small M formatting")
+    try expect(LocalTokenUsageText.compact(12_300_000) == "12.3M", "expected M formatting")
+    try expect(LocalTokenUsageText.compact(123_000_000) == "123M", "expected large M formatting")
 }
 
 func testRateLimitClientFallsBackToStdioWhenControlSocketProxyCloses() throws {
@@ -358,18 +476,58 @@ func testCodexHookInstallerMergesHooksAndEnablesFeature() throws {
     try expect(configText.contains("hooks = true"), "expected hooks feature enabled")
 }
 
+func calendar(timeZoneOffsetHours: Int) -> Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: timeZoneOffsetHours * 60 * 60)!
+    return calendar
+}
+
+func tokenUsageJSON(total: Int64, input: Int64, cached: Int64, output: Int64, reasoning: Int64) -> String {
+    #"{"input_tokens":\#(input),"cached_input_tokens":\#(cached),"output_tokens":\#(output),"reasoning_output_tokens":\#(reasoning),"total_tokens":\#(total)}"#
+}
+
+func tokenCountLine(timestamp: String, total: Int64, input: Int64, cached: Int64, output: Int64, reasoning: Int64) -> String {
+    tokenCountLine(
+        timestamp: timestamp,
+        lastUsage: tokenUsageJSON(total: total, input: input, cached: cached, output: output, reasoning: reasoning),
+        totalUsage: nil
+    )
+}
+
+func tokenCountLine(timestamp: String, lastUsage: String?, totalUsage: String?) -> String {
+    let fields = [
+        lastUsage.map { #""last_token_usage":\#($0)"# },
+        totalUsage.map { #""total_token_usage":\#($0)"# }
+    ].compactMap { $0 }.joined(separator: ",")
+    return #"{"timestamp":"\#(timestamp)","type":"event_msg","payload":{"type":"token_count","info":{\#(fields)}}}"# + "\n"
+}
+
+func sessionMetaLine(sessionID: String, forkedFromID: String?, timestamp: String) -> String {
+    let forkField = forkedFromID.map { #","forked_from_id":"\#($0)""# } ?? ""
+    return #"{"timestamp":"\#(timestamp)","type":"session_meta","payload":{"session_id":"\#(sessionID)","timestamp":"\#(timestamp)"\#(forkField)}}"# + "\n"
+}
+
+func append(_ text: String, to fileURL: URL) throws {
+    let handle = try FileHandle(forWritingTo: fileURL)
+    defer {
+        try? handle.close()
+    }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(text.utf8))
+}
+
 let tests = [
     ("parse rate limits", testParsesPrimaryAndSecondaryRateLimitsFromCodexResponse),
     ("clamp percentages", testClampsDisplayedPercentages),
     ("parse decimal percentages", testParsesDecimalUsedPercentWithoutTruncating),
     ("classify windows", testClassifiesQuotaWindowsByDuration),
     ("reset countdown", testFormatsResetCountdownCompactly),
-    ("daily weekly first observation", testDailyWeeklyUsageStartsAtZeroForFirstObservation),
-    ("daily weekly increase", testDailyWeeklyUsageTracksIncreaseFromTodayBaseline),
-    ("daily weekly migrated baseline", testDailyWeeklyUsageUsesEarlierSameDayMigratedBaseline),
-    ("daily weekly clamp", testDailyWeeklyUsageClampsWhenCurrentFallsBelowBaseline),
-    ("daily weekly new day", testDailyWeeklyUsageResetsBaselineOnNewDay),
-    ("daily weekly percent text", testDailyWeeklyUsageFormatsPercentAsWholePercent),
+    ("local token usage index skip", testLocalTokenUsageIndexesAndSkipsUnchangedFiles),
+    ("local token usage append", testLocalTokenUsageProcessesOnlyAppendedCompleteLines),
+    ("local token usage total delta", testLocalTokenUsagePrefersTotalDeltaWhenLastUsageIsOverstated),
+    ("local token usage fork parent", testLocalTokenUsageSubtractsForkParentTotals),
+    ("local token usage cutoff", testLocalTokenUsageSkipsFilesOlderThanCutoff),
+    ("local token usage text", testLocalTokenUsageCompactsCounts),
     ("rate limit client stdio fallback", testRateLimitClientFallsBackToStdioWhenControlSocketProxyCloses),
     ("codex activity multi-session aggregation", testCodexActivityTracksSessionsIndependentlyAndPrioritizesAttention),
     ("codex hook event parsing", testCodexHookEventParsesSessionKeyFromHookJSON),

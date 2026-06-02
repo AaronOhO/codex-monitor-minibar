@@ -7,29 +7,32 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let client = CodexRateLimitClient()
+    private let tokenUsageStore = CodexLocalTokenUsageStore()
     private var quotaTimer: Timer?
     private var activityTimer: Timer?
+    private var tokenUsageTimer: Timer?
     private var activitySocketServer: CodexHookSocketServer?
     private let activityStore = CodexActivityStore()
     private var latestSnapshot: RateLimitSnapshot?
-    private var latestWeeklyUsedTodayPercent: Double?
+    private var latestTokenUsageSnapshot: LocalTokenUsageSnapshot?
     private var latestActivityStatus: CodexActivityStatus = .none
     private var latestError: String?
+    private var latestTokenUsageError: String?
     private var latestLoginItemError: String?
     private var isRefreshing = false
-    private static let weeklyUsageDayKey = "weeklyUsage.dayKey"
-    private static let weeklyUsageBaselineKey = "weeklyUsage.baselineUsedPercent"
+    private var isTokenUsageRefreshing = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem.button?.title = ""
         statusItem.button?.imagePosition = .imageOnly
         statusItem.button?.toolTip = "Codex quota and activity"
-        updateStatusImage(snapshot: nil, weeklyUsedTodayPercent: nil, error: nil, refreshing: true)
+        updateStatusImage(snapshot: nil, error: nil, refreshing: true)
         installCodexHooks()
         startActivitySocketServer()
         rebuildMenu()
         refresh()
+        refreshTokenUsage()
         quotaTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
@@ -40,11 +43,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.refreshActivity()
             }
         }
+        tokenUsageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshTokenUsage()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         quotaTimer?.invalidate()
         activityTimer?.invalidate()
+        tokenUsageTimer?.invalidate()
         activitySocketServer?.stop()
     }
 
@@ -86,23 +95,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         isRefreshing = true
-        updateStatusImage(snapshot: latestSnapshot, weeklyUsedTodayPercent: latestWeeklyUsedTodayPercent, error: latestError, refreshing: true)
+        updateStatusImage(snapshot: latestSnapshot, error: latestError, refreshing: true)
         rebuildMenu()
 
         Task {
             do {
                 let snapshot = try await client.readRateLimits()
-                let weeklyUsedTodayPercent = updateWeeklyUsedToday(from: snapshot.weekly)
                 latestSnapshot = snapshot
-                latestWeeklyUsedTodayPercent = weeklyUsedTodayPercent
                 latestError = nil
                 isRefreshing = false
-                updateStatusImage(snapshot: snapshot, weeklyUsedTodayPercent: weeklyUsedTodayPercent, error: nil, refreshing: false)
+                updateStatusImage(snapshot: snapshot, error: nil, refreshing: false)
                 rebuildMenu()
             } catch {
                 latestError = error.localizedDescription
                 isRefreshing = false
-                updateStatusImage(snapshot: latestSnapshot, weeklyUsedTodayPercent: latestWeeklyUsedTodayPercent, error: latestError, refreshing: false)
+                updateStatusImage(snapshot: latestSnapshot, error: latestError, refreshing: false)
                 rebuildMenu()
             }
         }
@@ -110,13 +117,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusImage(
         snapshot: RateLimitSnapshot?,
-        weeklyUsedTodayPercent: Double?,
         error: String?,
         refreshing: Bool
     ) {
         statusItem.button?.image = MenuBarImageRenderer.image(
             snapshot: snapshot,
-            weeklyUsedTodayPercent: weeklyUsedTodayPercent,
+            todayTokenText: menuBarTokenText(),
             isRefreshing: refreshing,
             activityStatus: latestActivityStatus
         )
@@ -126,12 +132,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         if let snapshot = latestSnapshot, latestError == nil {
-            addUsageItems(to: menu, snapshot: snapshot, weeklyUsedTodayPercent: latestWeeklyUsedTodayPercent)
+            addUsageItems(to: menu, snapshot: snapshot)
         } else if isRefreshing {
             addUsageUnavailableItem(to: menu, title: "Refreshing...")
         } else {
             addUsageUnavailableItem(to: menu, title: "Unavailable")
         }
+        addLocalTokenUsageItems(to: menu)
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Open Codex", action: #selector(openCodex), keyEquivalent: ""))
@@ -140,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    private func addUsageItems(to menu: NSMenu, snapshot: RateLimitSnapshot, weeklyUsedTodayPercent: Double?) {
+    private func addUsageItems(to menu: NSMenu, snapshot: RateLimitSnapshot) {
         menu.addItem(disabledItem("Usage"))
 
         if let fiveHour = snapshot.fiveHour {
@@ -154,17 +161,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             menu.addItem(disabledItem("WK unavailable"))
         }
-
-        if let weeklyUsedTodayPercent {
-            menu.addItem(disabledItem("Today \(DailyWeeklyUsageText.percent(weeklyUsedTodayPercent))"))
-        } else {
-            menu.addItem(disabledItem("Today --"))
-        }
     }
 
     private func addUsageUnavailableItem(to menu: NSMenu, title: String) {
         menu.addItem(disabledItem("Usage"))
         menu.addItem(disabledItem(title))
+    }
+
+    private func addLocalTokenUsageItems(to menu: NSMenu) {
+        if let snapshot = latestTokenUsageSnapshot {
+            let usage = snapshot.usage(for: todayKey())
+            menu.addItem(disabledItem("This Mac Tokens \(LocalTokenUsageText.compact(usage.totalTokens)) today"))
+            if usage.totalTokens > 0 {
+                menu.addItem(disabledItem(
+                    "In \(LocalTokenUsageText.compact(usage.inputTokens)) · Cache \(LocalTokenUsageText.compact(usage.cachedInputTokens))"
+                ))
+                menu.addItem(disabledItem(
+                    "Out \(LocalTokenUsageText.compact(usage.outputTokens)) · Reason \(LocalTokenUsageText.compact(usage.reasoningOutputTokens))"
+                ))
+            }
+        } else if isTokenUsageRefreshing {
+            menu.addItem(disabledItem("This Mac Tokens indexing..."))
+        } else if latestTokenUsageError != nil {
+            menu.addItem(disabledItem("This Mac Tokens unavailable"))
+        } else {
+            menu.addItem(disabledItem("This Mac Tokens --"))
+        }
     }
 
     private func quotaProgressItem(label: String, quota: QuotaInfo) -> NSMenuItem {
@@ -234,92 +256,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return bridgeURL.path
     }
 
+    private func refreshTokenUsage() {
+        guard !isTokenUsageRefreshing else {
+            return
+        }
+        isTokenUsageRefreshing = true
+
+        let store = tokenUsageStore
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        Task.detached {
+            let result = Result {
+                try store.refresh(since: startOfToday)
+            }
+            await MainActor.run {
+                self.isTokenUsageRefreshing = false
+                switch result {
+                case .success(let snapshot):
+                    self.latestTokenUsageSnapshot = snapshot
+                    self.latestTokenUsageError = nil
+                case .failure(let error):
+                    self.latestTokenUsageError = error.localizedDescription
+                }
+                self.updateStatusImage(
+                    snapshot: self.latestSnapshot,
+                    error: self.latestError,
+                    refreshing: self.isRefreshing
+                )
+                self.rebuildMenu()
+            }
+        }
+    }
+
     private func refreshActivity() {
         latestActivityStatus = activityStore.aggregateStatus()
         updateStatusImage(
             snapshot: latestSnapshot,
-            weeklyUsedTodayPercent: latestWeeklyUsedTodayPercent,
             error: latestError,
             refreshing: isRefreshing
         )
         rebuildMenu()
     }
 
-    private func updateWeeklyUsedToday(from quota: QuotaInfo?) -> Double? {
-        guard let quota else {
-            return nil
+    private func menuBarTokenText() -> String? {
+        if let usage = latestTokenUsageSnapshot?.usage(for: todayKey()) {
+            return "TK \(LocalTokenUsageText.compact(usage.totalTokens))"
         }
-
-        let defaults = UserDefaults.standard
-        let dayKey = todayKey()
-        let storedState = storedWeeklyUsageState(defaults: defaults)
-        let persistedState = persistedWeeklyUsageState()
-        let mergedState = DailyWeeklyUsageTracker.mergedState(
-            primary: persistedState,
-            fallback: storedState,
-            dayKey: dayKey
-        )
-
-        let result = DailyWeeklyUsageTracker.update(
-            currentUsedPercent: quota.usedPercent,
-            state: mergedState,
-            dayKey: dayKey
-        )
-        defaults.set(result.state.dayKey, forKey: Self.weeklyUsageDayKey)
-        defaults.set(result.state.baselineUsedPercent, forKey: Self.weeklyUsageBaselineKey)
-        persistWeeklyUsageState(result.state)
-        return result.usedTodayPercent
-    }
-
-    private func storedWeeklyUsageState(defaults: UserDefaults) -> DailyWeeklyUsageState? {
-        guard
-            let storedDayKey = defaults.string(forKey: Self.weeklyUsageDayKey),
-            let storedBaseline = storedWeeklyUsageBaseline(defaults: defaults)
-        else {
-            return nil
-        }
-        return DailyWeeklyUsageState(dayKey: storedDayKey, baselineUsedPercent: storedBaseline)
-    }
-
-    private func storedWeeklyUsageBaseline(defaults: UserDefaults) -> Double? {
-        let value = defaults.object(forKey: Self.weeklyUsageBaselineKey)
-        if let doubleValue = value as? Double {
-            return doubleValue
-        }
-        if let intValue = value as? Int {
-            return Double(intValue)
-        }
-        return nil
-    }
-
-    private func persistedWeeklyUsageState() -> DailyWeeklyUsageState? {
-        guard let data = try? Data(contentsOf: weeklyUsageStateURL()) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(DailyWeeklyUsageState.self, from: data)
-    }
-
-    private func persistWeeklyUsageState(_ state: DailyWeeklyUsageState) {
-        do {
-            let url = weeklyUsageStateURL()
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try JSONEncoder().encode(state)
-            try data.write(to: url, options: .atomic)
-        } catch {
-        }
-    }
-
-    private func weeklyUsageStateURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex-monitor-minibar", isDirectory: true)
-            .appendingPathComponent("weekly-usage.json")
+        return isTokenUsageRefreshing ? "TK ..." : nil
     }
 
     private func todayKey() -> String {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        dayKey(for: Date())
+    }
+
+    private func dayKey(for date: Date) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
         let year = components.year ?? 0
         let month = components.month ?? 0
         let day = components.day ?? 0

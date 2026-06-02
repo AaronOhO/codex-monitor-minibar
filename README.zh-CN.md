@@ -4,7 +4,7 @@
 
 CodexMonitorMinibar 是一个原生 macOS 菜单栏应用，用来展示本机 Codex 的额度状态和会话运行状态。
 
-它会在顶部栏里展示今日使用量、5 小时额度、周额度、5 小时消耗进度边框，以及一个由 Codex hooks 驱动的状态灯。
+它会在顶部栏里展示今日本机 token 使用量、5 小时额度、周额度、5 小时消耗进度边框，以及一个由 Codex hooks 驱动的状态灯。
 
 ## 背景
 
@@ -21,11 +21,12 @@ CodexMonitorMinibar 是一个原生 macOS 菜单栏应用，用来展示本机 C
 - 原生 AppKit 菜单栏应用，使用 `LSUIElement`
 - 从本机 Codex app-server 读取额度
 - 顶部栏展示：
-  - 今日使用量增量
+  - 今日本机 token 使用量
   - 5 小时剩余额度和重置倒计时
   - 周剩余额度和重置倒计时
   - 用胶囊形 border 展示 5 小时已消耗进度
 - 展开菜单里展示更详细的额度进度条
+- 展开菜单里展示今天的 input/cache/output/reasoning token 拆分
 - 通过 Codex hooks 追踪会话状态
 - 支持多个 Codex 会话并行
 - App 启动时自动安装所需 Codex hooks
@@ -47,13 +48,14 @@ CodexMonitorMinibar 是一个原生 macOS 菜单栏应用，用来展示本机 C
 状态栏文案刻意保持紧凑：
 
 ```text
-Today | 5H | WK
+TK | 5H | WK
 ```
 
-- `Today` 基于周维度额度计算，表示今天已经消耗了多少周额度。它是“今天开始时的周额度已用百分比”和“当前周额度已用百分比”的差值。
+- `TK` 表示今天这台 Mac 上新增使用了多少 token。
 - `5H` 表示 5 小时滚动窗口的剩余额度百分比，以及距离这个窗口重置还剩多久。
 - `WK` 表示周窗口的剩余额度百分比，以及距离周窗口重置还剩多久。
 - 胶囊形 border 展示 5 小时额度的已消耗进度，因为在持续工作时，5 小时窗口通常是最需要及时关注的限制。
+- `This Mac Tokens` 是本机可观测 token 用量，来自这台 Mac 上 Codex session JSONL 的 `token_count` 事件。如果同一个账号还在其他设备上使用 Codex，它会和 Codex 个人详情页的账号级统计不同。展开菜单只展示今天的 input/cache/output/reasoning 拆分。
 
 ## 工作原理
 
@@ -93,6 +95,21 @@ Codex hook event
 ```
 
 `CodexMonitorHookBridge` 会从 stdin 读取一条 hook JSON，把它发到本机 Unix socket。菜单栏 app 按 `session_id` 维护内存里的会话状态表。
+
+本机 token 用量来自：
+
+```text
+~/.codex/sessions/**/*.jsonl
+~/.codex/archived_sessions/**/*.jsonl
+```
+
+应用只索引今天修改过的 JSONL 文件里的 `token_count` 事件。有 `total_token_usage` 时优先用累计值做差分纠偏，否则回退到 `last_token_usage`；如果 fork 子会话能找到 parent session，也会扣掉继承的 parent totals。第一次扫描会建立索引：
+
+```text
+~/.codex-monitor-minibar/token-usage-index.json
+```
+
+后续刷新只枚举文件元信息，并从上次处理到的 offset 继续读取变更文件尾部；没有变化的 JSONL 不会被重复读取，历史文件会直接跳过。
 
 ## 自动安装 Hooks
 

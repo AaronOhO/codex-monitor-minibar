@@ -4,7 +4,7 @@ import CodexMonitorCore
 struct MenuBarImageRenderer {
     static func image(
         snapshot: RateLimitSnapshot?,
-        weeklyUsedTodayPercent: Double?,
+        todayTokenText: String?,
         isRefreshing: Bool,
         activityStatus: CodexActivityStatus
     ) -> NSImage {
@@ -12,10 +12,7 @@ struct MenuBarImageRenderer {
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11.0, weight: .semibold),
             .foregroundColor: NSColor.white
         ]
-        let dailyText = dailyUsageText(
-            weeklyUsedTodayPercent: weeklyUsedTodayPercent,
-            isRefreshing: isRefreshing
-        )
+        let dailyText = todayTokenText ?? (isRefreshing ? "TK ..." : "TK --")
         let fiveHourText = quotaText(label: "5H", quota: snapshot?.fiveHour)
         let weeklyText = quotaText(label: "WK", quota: snapshot?.weekly)
         let text = "\(dailyText) | \(fiveHourText) | \(weeklyText)"
@@ -41,13 +38,6 @@ struct MenuBarImageRenderer {
         image.unlockFocus()
         image.isTemplate = false
         return image
-    }
-
-    private static func dailyUsageText(weeklyUsedTodayPercent: Double?, isRefreshing: Bool) -> String {
-        if let weeklyUsedTodayPercent {
-            return DailyWeeklyUsageText.percent(weeklyUsedTodayPercent)
-        }
-        return isRefreshing ? "..." : "--"
     }
 
     private static func quotaText(label: String, quota: QuotaInfo?) -> String {

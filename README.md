@@ -4,7 +4,7 @@
 
 CodexMonitorMinibar is a native macOS menu bar app for monitoring local Codex quota and Codex session activity.
 
-It shows the current daily usage delta, 5-hour quota, weekly quota, 5-hour reset progress as a capsule border, and a compact activity light driven by Codex hooks.
+It shows today's local token usage, 5-hour quota, weekly quota, 5-hour reset progress as a capsule border, and a compact activity light driven by Codex hooks.
 
 ## Background
 
@@ -21,11 +21,12 @@ This app was built to help use the 20x Pro Codex quota as fully as possible. Bec
 - Native AppKit menu bar app (`LSUIElement`)
 - Reads Codex quota from the local Codex app-server
 - Displays:
-  - today usage delta
+  - today's local token usage
   - 5-hour quota remaining and reset countdown
   - weekly quota remaining and reset countdown
   - capsule border progress for 5-hour used quota
 - Moves detailed quota progress bars into the menu
+- Shows today's local input/cache/output/reasoning token breakdown in the menu
 - Tracks Codex activity through hooks
 - Supports multiple Codex sessions
 - Automatically installs the required Codex hooks on app launch
@@ -47,13 +48,14 @@ White does not mean "idle". It means the app has no reliable activity signal yet
 The menu bar text is intentionally compact:
 
 ```text
-Today | 5H | WK
+TK | 5H | WK
 ```
 
-- `Today` is based on the weekly quota. It means how much weekly quota has been consumed today, computed as the increase in weekly used percentage since the current day started.
+- `TK` shows today's local token usage on this Mac.
 - `5H` shows the remaining percentage for the rolling 5-hour quota window and the time left until that window resets.
 - `WK` shows the remaining percentage for the weekly quota window and the time left until that window resets.
 - The capsule border shows 5-hour quota usage progress, because the 5-hour window is usually the most urgent limit during active work.
+- `This Mac Tokens` is local-only token usage. It is computed from this machine's Codex session JSONL `token_count` events and can differ from the account-level Codex profile page when Codex is used on other devices. The menu shows only today's input/cache/output/reasoning breakdown.
 
 ## How It Works
 
@@ -93,6 +95,21 @@ Codex hook event
 ```
 
 The bridge reads one hook JSON payload from stdin, normalizes it, and sends it to the app over a Unix socket. The app keeps an in-memory session map keyed by `session_id`.
+
+Local token usage comes from:
+
+```text
+~/.codex/sessions/**/*.jsonl
+~/.codex/archived_sessions/**/*.jsonl
+```
+
+The app indexes only `token_count` events from JSONL files modified today. It prefers `total_token_usage` deltas when available, falls back to `last_token_usage`, and subtracts inherited parent totals for forked sessions when the parent session is available. The first scan builds an index in:
+
+```text
+~/.codex-monitor-minibar/token-usage-index.json
+```
+
+After that, refreshes enumerate file metadata and read only changed file tails from the last processed offset. Unchanged JSONL files are not re-read, and older files are skipped.
 
 ## Automatic Hook Installation
 
