@@ -6,21 +6,25 @@ struct MenuBarImageRenderer {
         snapshot: RateLimitSnapshot?,
         todayTokenText: String?,
         isRefreshing: Bool,
-        activityStatus: CodexActivityStatus
+        activityStatus: CodexActivityStatus,
+        staleFiveHourQuota: Bool,
+        staleWeeklyQuota: Bool
     ) -> NSImage {
-        let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11.0, weight: .semibold),
-            .foregroundColor: NSColor.white
-        ]
         let dailyText = todayTokenText ?? (isRefreshing ? "TK ..." : "TK --")
         let fiveHourText = quotaText(label: "5H", quota: snapshot?.fiveHour)
         let weeklyText = quotaText(label: "WK", quota: snapshot?.weekly)
-        let text = "\(dailyText) | \(fiveHourText) | \(weeklyText)"
+        let textSegments = [
+            TextSegment(text: dailyText, color: NSColor.white),
+            TextSegment(text: " | ", color: NSColor.white),
+            TextSegment(text: fiveHourText, color: staleFiveHourQuota ? NSColor.systemRed : NSColor.white),
+            TextSegment(text: " | ", color: NSColor.white),
+            TextSegment(text: weeklyText, color: staleWeeklyQuota ? NSColor.systemRed : NSColor.white)
+        ]
         let horizontalPadding: CGFloat = 9
         let activityWidth: CGFloat = 14
         let activityGap: CGFloat = 5
         let activityCenterOffsetX: CGFloat = -4
-        let textWidth = textWidth(text, attributes: textAttributes)
+        let textWidth = textWidth(textSegments)
         let size = NSSize(
             width: horizontalPadding * 2 + activityWidth + activityGap + textWidth,
             height: 22
@@ -31,9 +35,9 @@ struct MenuBarImageRenderer {
         NSColor.clear.setFill()
         NSRect(origin: .zero, size: size).fill()
 
-        drawQuotaBorder(size: size, usedPercent: snapshot?.fiveHour?.usedPercent)
+        drawQuotaBorder(size: size, usedPercent: snapshot?.fiveHour?.usedPercent, isStale: staleFiveHourQuota)
         drawActivityDot(status: activityStatus, center: NSPoint(x: horizontalPadding + activityWidth / 2 + activityCenterOffsetX, y: size.height / 2))
-        text.draw(at: NSPoint(x: horizontalPadding + activityWidth + activityGap, y: 4), withAttributes: textAttributes)
+        drawTextSegments(textSegments, at: NSPoint(x: horizontalPadding + activityWidth + activityGap, y: 4))
 
         image.unlockFocus()
         image.isTemplate = false
@@ -51,11 +55,29 @@ struct MenuBarImageRenderer {
         "\(Int(value.rounded()))%"
     }
 
-    private static func textWidth(_ text: String, attributes: [NSAttributedString.Key: Any]) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: attributes).width)
+    private static func textWidth(_ segments: [TextSegment]) -> CGFloat {
+        ceil(segments.reduce(CGFloat.zero) { width, segment in
+            width + (segment.text as NSString).size(withAttributes: attributes(color: segment.color)).width
+        })
     }
 
-    private static func drawQuotaBorder(size: NSSize, usedPercent: Double?) {
+    private static func drawTextSegments(_ segments: [TextSegment], at point: NSPoint) {
+        var x = point.x
+        for segment in segments {
+            let attributes = attributes(color: segment.color)
+            segment.text.draw(at: NSPoint(x: x, y: point.y), withAttributes: attributes)
+            x += (segment.text as NSString).size(withAttributes: attributes).width
+        }
+    }
+
+    private static func attributes(color: NSColor) -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11.0, weight: .semibold),
+            .foregroundColor: color
+        ]
+    }
+
+    private static func drawQuotaBorder(size: NSSize, usedPercent: Double?, isStale: Bool) {
         let rect = NSRect(x: 1.25, y: 1.25, width: size.width - 2.5, height: size.height - 2.5)
         let radius = rect.height / 2
         let borderPath = capsulePath(rect: rect, radius: radius)
@@ -72,14 +94,14 @@ struct MenuBarImageRenderer {
 
         let progress = max(0, min(100, usedPercent)) / 100
         if progress >= 1 {
-            color(forUsedPercent: usedPercent).setStroke()
+            color(forUsedPercent: usedPercent, isStale: isStale).setStroke()
             borderPath.stroke()
             return
         }
 
         let perimeter = 2 * (rect.width - 2 * radius) + 2 * .pi * radius
         borderPath.setLineDash([perimeter * CGFloat(progress), perimeter], count: 2, phase: 0)
-        color(forUsedPercent: usedPercent).setStroke()
+        color(forUsedPercent: usedPercent, isStale: isStale).setStroke()
         borderPath.stroke()
     }
 
@@ -118,7 +140,10 @@ struct MenuBarImageRenderer {
         return path
     }
 
-    private static func color(forUsedPercent percent: Double) -> NSColor {
+    private static func color(forUsedPercent percent: Double, isStale: Bool) -> NSColor {
+        if isStale {
+            return NSColor.systemRed
+        }
         if percent >= 85 {
             return NSColor.systemRed
         }
@@ -139,5 +164,10 @@ struct MenuBarImageRenderer {
         case .none:
             return NSColor.white.withAlphaComponent(0.72)
         }
+    }
+
+    private struct TextSegment {
+        let text: String
+        let color: NSColor
     }
 }

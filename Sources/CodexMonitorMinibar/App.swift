@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var latestError: String?
     private var latestTokenUsageError: String?
     private var latestLoginItemError: String?
+    private var staleFiveHourQuota = false
+    private var staleWeeklyQuota = false
     private var isRefreshing = false
     private var isTokenUsageRefreshing = false
 
@@ -43,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.refreshActivity()
             }
         }
-        tokenUsageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        tokenUsageTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshTokenUsage()
             }
@@ -90,6 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SMAppService.openSystemSettingsLoginItems()
     }
 
+    @objc private func refreshAllData() {
+        refreshActivity()
+        refresh()
+        refreshTokenUsage()
+    }
+
     private func refresh() {
         guard !isRefreshing else {
             return
@@ -101,13 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             do {
                 let snapshot = try await client.readRateLimits()
-                latestSnapshot = snapshot
-                latestError = nil
+                applyRateLimitSnapshot(snapshot)
                 isRefreshing = false
-                updateStatusImage(snapshot: snapshot, error: nil, refreshing: false)
+                updateStatusImage(snapshot: latestSnapshot, error: nil, refreshing: false)
                 rebuildMenu()
             } catch {
-                latestError = error.localizedDescription
+                markRateLimitRefreshFailed(error)
                 isRefreshing = false
                 updateStatusImage(snapshot: latestSnapshot, error: latestError, refreshing: false)
                 rebuildMenu()
@@ -124,14 +131,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             snapshot: snapshot,
             todayTokenText: menuBarTokenText(),
             isRefreshing: refreshing,
-            activityStatus: latestActivityStatus
+            activityStatus: latestActivityStatus,
+            staleFiveHourQuota: staleFiveHourQuota,
+            staleWeeklyQuota: staleWeeklyQuota
         )
     }
 
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        if let snapshot = latestSnapshot, latestError == nil {
+        if let snapshot = latestSnapshot {
             addUsageItems(to: menu, snapshot: snapshot)
         } else if isRefreshing {
             addUsageUnavailableItem(to: menu, title: "Refreshing...")
@@ -141,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addLocalTokenUsageItems(to: menu)
 
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Refresh Now", action: #selector(refreshAllData), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Open Codex", action: #selector(openCodex), keyEquivalent: ""))
         addLaunchAtLoginItem(to: menu)
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -151,15 +161,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(disabledItem("Usage"))
 
         if let fiveHour = snapshot.fiveHour {
-            menu.addItem(quotaProgressItem(label: "5H", quota: fiveHour))
+            menu.addItem(quotaProgressItem(label: "5H", quota: fiveHour, isStale: staleFiveHourQuota))
         } else {
             menu.addItem(disabledItem("5H unavailable"))
         }
 
         if let weekly = snapshot.weekly {
-            menu.addItem(quotaProgressItem(label: "WK", quota: weekly))
+            menu.addItem(quotaProgressItem(label: "WK", quota: weekly, isStale: staleWeeklyQuota))
         } else {
             menu.addItem(disabledItem("WK unavailable"))
+        }
+
+        if latestError != nil || staleFiveHourQuota || staleWeeklyQuota {
+            menu.addItem(disabledItem("Showing last known quota"))
         }
     }
 
@@ -189,12 +203,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func quotaProgressItem(label: String, quota: QuotaInfo) -> NSMenuItem {
+    private func quotaProgressItem(label: String, quota: QuotaInfo, isStale: Bool) -> NSMenuItem {
         let item = NSMenuItem()
         item.view = QuotaProgressMenuView(
             label: label,
             remainingPercent: quota.remainingPercent,
-            resetText: ResetCountdownFormatter.compactText(resetsAt: quota.resetsAt)
+            resetText: ResetCountdownFormatter.compactText(resetsAt: quota.resetsAt),
+            isStale: isStale
         )
         return item
     }
@@ -315,6 +330,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let day = components.day ?? 0
         return String(format: "%04d-%02d-%02d", year, month, day)
     }
+
+    private func applyRateLimitSnapshot(_ snapshot: RateLimitSnapshot) {
+        let previous = latestSnapshot
+        staleFiveHourQuota = snapshot.fiveHour == nil && previous?.fiveHour != nil
+        staleWeeklyQuota = snapshot.weekly == nil && previous?.weekly != nil
+        latestSnapshot = RateLimitSnapshot(
+            fiveHour: snapshot.fiveHour ?? previous?.fiveHour,
+            weekly: snapshot.weekly ?? previous?.weekly,
+            planType: snapshot.planType ?? previous?.planType,
+            limitName: snapshot.limitName ?? previous?.limitName
+        )
+        latestError = nil
+    }
+
+    private func markRateLimitRefreshFailed(_ error: Error) {
+        latestError = error.localizedDescription
+        staleFiveHourQuota = latestSnapshot?.fiveHour != nil
+        staleWeeklyQuota = latestSnapshot?.weekly != nil
+    }
 }
 
 private enum AppError: LocalizedError {
@@ -332,11 +366,13 @@ private final class QuotaProgressMenuView: NSView {
     private let label: String
     private let remainingPercent: Double
     private let resetText: String
+    private let isStale: Bool
 
-    init(label: String, remainingPercent: Double, resetText: String) {
+    init(label: String, remainingPercent: Double, resetText: String, isStale: Bool) {
         self.label = label
         self.remainingPercent = max(0, min(100, remainingPercent))
         self.resetText = resetText
+        self.isStale = isStale
         super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 32))
     }
 
@@ -349,7 +385,7 @@ private final class QuotaProgressMenuView: NSView {
 
         let textAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: isStale ? NSColor.systemRed : NSColor.labelColor
         ]
         let contentX: CGFloat = 26
         label.draw(at: NSPoint(x: contentX, y: 15), withAttributes: textAttributes)
@@ -362,7 +398,7 @@ private final class QuotaProgressMenuView: NSView {
 
         let fillWidth = max(2, track.width * CGFloat(remainingPercent) / 100)
         let fillRect = NSRect(x: track.minX, y: track.minY, width: fillWidth, height: track.height)
-        color(forRemainingPercent: remainingPercent).setFill()
+        (isStale ? NSColor.systemRed : color(forRemainingPercent: remainingPercent)).setFill()
         rounded(fillRect, radius: 2.5).fill()
     }
 

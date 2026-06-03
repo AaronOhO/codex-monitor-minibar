@@ -72,8 +72,8 @@ private final class CodexAppServerRPC {
     private let stdinPipe = Pipe()
     private let stdoutPipe = Pipe()
     private let stderrPipe = Pipe()
-    private let stdoutContinuation: AsyncStream<Data>.Continuation
-    private var stdoutIterator: AsyncStream<Data>.Iterator
+    private let stderrLock = NSLock()
+    private var stderrText = ""
     private var nextID = 1
     private let timeoutSeconds: TimeInterval
 
@@ -89,13 +89,6 @@ private final class CodexAppServerRPC {
 
         self.timeoutSeconds = timeoutSeconds
 
-        var continuation: AsyncStream<Data>.Continuation!
-        let stream = AsyncStream<Data> { createdContinuation in
-            continuation = createdContinuation
-        }
-        self.stdoutContinuation = continuation
-        self.stdoutIterator = stream.makeAsyncIterator()
-
         process.executableURL = URL(fileURLWithPath: codexExecutablePath)
         if useControlSocket {
             process.arguments = ["app-server", "proxy", "--sock", controlSocketPath]
@@ -105,8 +98,10 @@ private final class CodexAppServerRPC {
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        var environment = ProcessInfo.processInfo.environment
+        environment["CODEX_MONITOR_MINIBAR"] = "1"
+        process.environment = environment
 
-        installStdoutReader()
         installStderrReader()
 
         do {
@@ -122,7 +117,7 @@ private final class CodexAppServerRPC {
             params: [
                 "clientInfo": [
                     "name": "CodexMonitorMinibar",
-                    "version": "0.1.2"
+                    "version": "0.1.3"
                 ]
             ],
             timeoutSeconds: max(timeoutSeconds, 10)
@@ -140,7 +135,7 @@ private final class CodexAppServerRPC {
         ])
 
         return try await withTimeout(seconds: timeoutSeconds ?? self.timeoutSeconds, method: method) {
-            while let line = await self.stdoutIterator.next() {
+            while let line = self.readStdoutLine() {
                 guard !line.isEmpty else {
                     continue
                 }
@@ -159,40 +154,44 @@ private final class CodexAppServerRPC {
                 }
                 return line
             }
-            throw CodexRateLimitClientError.malformed("stdout closed")
+            let stderr = self.collectedStderr()
+            if stderr.isEmpty {
+                throw CodexRateLimitClientError.malformed("stdout closed")
+            }
+            throw CodexRateLimitClientError.malformed("stdout closed: \(stderr)")
         }
     }
 
     func shutdown() {
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
-        stdoutContinuation.finish()
+        try? stdinPipe.fileHandleForWriting.close()
         if process.isRunning {
             process.terminate()
         }
     }
 
-    private func installStdoutReader() {
-        let buffer = LineBuffer()
-        let continuation = stdoutContinuation
-        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+    private func installStderrReader() {
+        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if data.isEmpty {
                 handle.readabilityHandler = nil
-                continuation.finish()
                 return
             }
-            for line in buffer.appendAndDrainLines(data) {
-                continuation.yield(line)
-            }
+            self?.appendStderr(data)
         }
     }
 
-    private func installStderrReader() {
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            if handle.availableData.isEmpty {
-                handle.readabilityHandler = nil
+    private func readStdoutLine() -> Data? {
+        var line = Data()
+        while true {
+            let byte = stdoutPipe.fileHandleForReading.readData(ofLength: 1)
+            if byte.isEmpty {
+                return line.isEmpty ? nil : line
             }
+            if byte[0] == 0x0A {
+                return line
+            }
+            line.append(byte)
         }
     }
 
@@ -243,24 +242,28 @@ private final class CodexAppServerRPC {
             nil
         }
     }
-}
 
-private final class LineBuffer {
-    private let lock = NSLock()
-    private var buffer = Data()
-
-    func appendAndDrainLines(_ data: Data) -> [Data] {
-        lock.lock()
+    private func appendStderr(_ data: Data) {
+        guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
+            return
+        }
+        stderrLock.lock()
         defer {
-            lock.unlock()
+            stderrLock.unlock()
         }
 
-        buffer.append(data)
-        var lines: [Data] = []
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            lines.append(Data(buffer[..<newline]))
-            buffer.removeSubrange(...newline)
+        stderrText += text
+        if stderrText.count > 2_000 {
+            stderrText = String(stderrText.suffix(2_000))
         }
-        return lines
+    }
+
+    private func collectedStderr() -> String {
+        stderrLock.lock()
+        defer {
+            stderrLock.unlock()
+        }
+
+        return stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

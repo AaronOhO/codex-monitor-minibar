@@ -113,6 +113,31 @@ func testParsesDecimalUsedPercentWithoutTruncating() throws {
     try expectClose(snapshot.fiveHour?.remainingPercent, 87.66, "expected decimal remaining percent")
 }
 
+func testParsesPrimaryWithoutWindowDurationAsFiveHour() throws {
+    let response = """
+    {
+      "id": "rate-limit-read-1",
+      "result": {
+        "rateLimits": {
+          "primary": {
+            "usedPercent": 1,
+            "windowDurationMins": null,
+            "resetsAt": 1780470005
+          },
+          "secondary": null
+        }
+      }
+    }
+    """.data(using: .utf8)!
+
+    let snapshot = try RateLimitParser.parse(jsonRPCResponse: response)
+
+    try expect(snapshot.fiveHour?.usedPercent == 1, "expected primary fallback as 5h")
+    try expect(snapshot.fiveHour?.remainingPercent == 99, "expected primary fallback remaining")
+    try expect(snapshot.fiveHour?.windowDurationMins == 300, "expected fallback 5h duration")
+    try expect(snapshot.weekly == nil, "expected missing secondary to stay unavailable")
+}
+
 func testClassifiesQuotaWindowsByDuration() throws {
     try expect(RateLimitParser.classify(windowDurationMins: 240) == .fiveHour, "expected 240 as 5h")
     try expect(RateLimitParser.classify(windowDurationMins: 300) == .fiveHour, "expected 300 as 5h")
@@ -331,6 +356,7 @@ func testRateLimitClientFallsBackToStdioWhenControlSocketProxyCloses() throws {
     if [ "$1" = "app-server" ] && [ "$2" = "proxy" ]; then
       exit 0
     fi
+    test "$CODEX_MONITOR_MINIBAR" = "1" || exit 2
 
     printf '%s\\n' '{"id":1,"result":{}}'
     printf '%s\\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":20,"windowDurationMins":300,"resetsAt":"2026-05-31T14:15:00Z"},"secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":"2026-06-01T14:15:00Z"}}}}'
@@ -520,6 +546,7 @@ let tests = [
     ("parse rate limits", testParsesPrimaryAndSecondaryRateLimitsFromCodexResponse),
     ("clamp percentages", testClampsDisplayedPercentages),
     ("parse decimal percentages", testParsesDecimalUsedPercentWithoutTruncating),
+    ("parse missing primary duration", testParsesPrimaryWithoutWindowDurationAsFiveHour),
     ("classify windows", testClassifiesQuotaWindowsByDuration),
     ("reset countdown", testFormatsResetCountdownCompactly),
     ("local token usage index skip", testLocalTokenUsageIndexesAndSkipsUnchangedFiles),

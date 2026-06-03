@@ -17,6 +17,13 @@ public struct RateLimitSnapshot: Equatable {
     public let weekly: QuotaInfo?
     public let planType: String?
     public let limitName: String?
+
+    public init(fiveHour: QuotaInfo?, weekly: QuotaInfo?, planType: String?, limitName: String?) {
+        self.fiveHour = fiveHour
+        self.weekly = weekly
+        self.planType = planType
+        self.limitName = limitName
+    }
 }
 
 public enum RateLimitParser {
@@ -36,9 +43,26 @@ public enum RateLimitParser {
         var fiveHour: QuotaInfo?
         var weekly: QuotaInfo?
 
-        for window in [envelope.result.rateLimits.primary, envelope.result.rateLimits.secondary].compactMap({ $0 }) {
-            guard let duration = window.windowDurationMins else {
+        let windows: [(window: RPCRateLimitWindow?, fallback: QuotaWindow)] = [
+            (envelope.result.rateLimits.primary, .fiveHour),
+            (envelope.result.rateLimits.secondary, .weekly)
+        ]
+
+        for candidate in windows {
+            guard let window = candidate.window else {
                 continue
+            }
+            let duration: Int
+            let quotaWindow: QuotaWindow
+            if let windowDuration = window.windowDurationMins {
+                guard let classifiedWindow = classify(windowDurationMins: windowDuration) else {
+                    continue
+                }
+                duration = windowDuration
+                quotaWindow = classifiedWindow
+            } else {
+                duration = defaultDuration(for: candidate.fallback)
+                quotaWindow = candidate.fallback
             }
             let quota = QuotaInfo(
                 usedPercent: clampPercent(window.usedPercent),
@@ -47,13 +71,11 @@ public enum RateLimitParser {
                 windowDurationMins: duration
             )
 
-            switch classify(windowDurationMins: duration) {
+            switch quotaWindow {
             case .fiveHour:
                 fiveHour = quota
             case .weekly:
                 weekly = quota
-            case nil:
-                continue
             }
         }
 
@@ -67,6 +89,15 @@ public enum RateLimitParser {
 
     private static func clampPercent(_ value: Double) -> Double {
         max(0, min(100, value))
+    }
+
+    private static func defaultDuration(for window: QuotaWindow) -> Int {
+        switch window {
+        case .fiveHour:
+            return 300
+        case .weekly:
+            return 7 * 24 * 60
+        }
     }
 }
 
