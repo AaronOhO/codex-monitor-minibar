@@ -135,6 +135,10 @@ public final class CodexActivityStore {
         )
     }
 
+    public func clearActivity() {
+        sessionsByID.removeAll()
+    }
+
     public func sessions(now: Date = Date()) -> [CodexSessionActivity] {
         pruneExpired(now: now)
         return sessionsByID.values.sorted { left, right in

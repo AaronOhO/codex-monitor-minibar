@@ -100,6 +100,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTokenUsage()
     }
 
+    @objc private func clearActivityState() {
+        activityStore.clearActivity()
+        refreshActivity()
+    }
+
     private func refresh() {
         guard !isRefreshing else {
             return
@@ -151,6 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         addLocalTokenUsageItems(to: menu)
         menu.addItem(disabledItem(latestActivityMenuTitle))
+        if latestActivityStatus != .none {
+            menu.addItem(NSMenuItem(title: "Clear Activity State", action: #selector(clearActivityState), keyEquivalent: ""))
+        }
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Refresh Now", action: #selector(refreshAllData), keyEquivalent: "r"))

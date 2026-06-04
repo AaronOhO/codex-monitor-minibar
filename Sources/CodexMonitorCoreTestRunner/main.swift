@@ -472,6 +472,18 @@ func testCodexActivitySummaryExplainsAttentionReason() throws {
     try expect(summary.menuTitle == "Activity: needs attention (exec_command)", "expected attention reason in menu title")
 }
 
+func testCodexActivityClearResetsToInitialState() throws {
+    let store = CodexActivityStore()
+    let now = Date(timeIntervalSince1970: 100)
+
+    store.record(CodexHookEvent(hookEventName: "PermissionRequest", sessionID: "session-a", turnID: "turn-1", cwd: "/tmp/a", toolName: "exec_command"), at: now)
+    store.clearActivity()
+
+    let summary = store.summary(now: now.addingTimeInterval(1))
+    try expect(summary.status == .none, "expected clear to reset activity status")
+    try expect(summary.menuTitle == "Activity: none", "expected clear to reset activity menu title")
+}
+
 func testCodexHookEventParsesSessionKeyFromHookJSON() throws {
     let payload = """
     {
@@ -630,6 +642,7 @@ let tests = [
     ("codex activity multi-session aggregation", testCodexActivityTracksSessionsIndependentlyAndPrioritizesAttention),
     ("codex activity ignores failed tool attention", testCodexActivityDoesNotTreatFailedToolAsAttention),
     ("codex activity attention summary", testCodexActivitySummaryExplainsAttentionReason),
+    ("codex activity clear reset", testCodexActivityClearResetsToInitialState),
     ("codex hook event parsing", testCodexHookEventParsesSessionKeyFromHookJSON),
     ("codex hook socket delivery", testCodexHookSocketDeliversEvents),
     ("codex hook installer", testCodexHookInstallerMergesHooksAndEnablesFeature)
