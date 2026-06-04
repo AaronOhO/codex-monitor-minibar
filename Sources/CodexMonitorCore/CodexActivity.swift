@@ -41,6 +41,11 @@ public struct CodexSessionActivity: Equatable {
     public let updatedAt: Date
 }
 
+public struct CodexActivitySummary: Equatable {
+    public let status: CodexActivityStatus
+    public let menuTitle: String
+}
+
 public enum CodexHookEventParser {
     public static func parse(_ data: Data) throws -> CodexHookEvent {
         guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -139,6 +144,19 @@ public final class CodexActivityStore {
 
     public func aggregateStatus(now: Date = Date()) -> CodexActivityStatus {
         let activeSessions = sessions(now: now)
+        return aggregateStatus(for: activeSessions)
+    }
+
+    public func summary(now: Date = Date()) -> CodexActivitySummary {
+        let activeSessions = sessions(now: now)
+        let status = aggregateStatus(for: activeSessions)
+        return CodexActivitySummary(
+            status: status,
+            menuTitle: menuTitle(status: status, sessions: activeSessions)
+        )
+    }
+
+    private func aggregateStatus(for activeSessions: [CodexSessionActivity]) -> CodexActivityStatus {
         if activeSessions.contains(where: { $0.status == .needsAttention }) {
             return .needsAttention
         }
@@ -152,13 +170,28 @@ public final class CodexActivityStore {
     }
 
     private func status(for event: CodexHookEvent) -> CodexActivityStatus {
-        if event.hookEventName == "PermissionRequest" || event.toolFailed {
+        if event.hookEventName == "PermissionRequest" {
             return .needsAttention
         }
         if event.hookEventName == "Stop" || event.hookEventName == "SubagentStop" {
             return .idle
         }
         return .running
+    }
+
+    private func menuTitle(status: CodexActivityStatus, sessions: [CodexSessionActivity]) -> String {
+        switch status {
+        case .needsAttention:
+            let session = sessions.first { $0.status == .needsAttention }
+            let reason = session?.toolName ?? session?.lastEventName ?? "permission required"
+            return "Activity: needs attention (\(reason))"
+        case .running:
+            return "Activity: running"
+        case .idle:
+            return "Activity: idle"
+        case .none:
+            return "Activity: none"
+        }
     }
 
     private func pruneExpired(now: Date) {

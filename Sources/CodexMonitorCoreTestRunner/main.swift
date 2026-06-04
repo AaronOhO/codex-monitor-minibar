@@ -387,6 +387,56 @@ func testRateLimitClientFallsBackToStdioWhenControlSocketProxyCloses() throws {
     try expect(snapshot?.weekly?.remainingPercent == 60, "expected stdio fallback weekly remaining percent")
 }
 
+func testRateLimitClientReusesStdioAppServerAcrossRefreshes() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let executableURL = directory.appendingPathComponent("fake-codex")
+    let startLogURL = directory.appendingPathComponent("starts.log")
+    let script = """
+    #!/bin/sh
+    printf 'start\\n' >> '\(startLogURL.path)'
+    while IFS= read -r line; do
+      id=$(printf '%s\\n' "$line" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p')
+      [ -n "$id" ] || continue
+      case "$line" in
+        *account*rateLimits*read*)
+          printf '{"id":%s,"result":{"rateLimits":{"primary":{"usedPercent":20,"windowDurationMins":300,"resetsAt":"2026-05-31T14:15:00Z"},"secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":"2026-06-01T14:15:00Z"}}}}\\n' "$id"
+          ;;
+        *initialize*)
+          printf '{"id":%s,"result":{}}\\n' "$id"
+          ;;
+      esac
+    done
+    """
+    try script.write(to: executableURL, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
+
+    let client = CodexRateLimitClient(
+        codexExecutablePath: executableURL.path,
+        controlSocketPath: directory.appendingPathComponent("missing.sock").path,
+        timeoutSeconds: 3
+    )
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Result<(RateLimitSnapshot, RateLimitSnapshot), Error>?
+    Task {
+        do {
+            let first = try await client.readRateLimits()
+            let second = try await client.readRateLimits()
+            result = .success((first, second))
+        } catch {
+            result = .failure(error)
+        }
+        semaphore.signal()
+    }
+    semaphore.wait()
+
+    let snapshots = try result?.get()
+    try expect(snapshots?.0.fiveHour?.usedPercent == 20, "expected first read to succeed")
+    try expect(snapshots?.1.weekly?.remainingPercent == 60, "expected second read to succeed")
+    let startLog = try String(contentsOf: startLogURL, encoding: .utf8)
+    try expect(startLog.split(separator: "\n").count == 1, "expected app-server process to be reused")
+}
+
 func testCodexActivityTracksSessionsIndependentlyAndPrioritizesAttention() throws {
     let store = CodexActivityStore()
     let now = Date(timeIntervalSince1970: 100)
@@ -400,6 +450,26 @@ func testCodexActivityTracksSessionsIndependentlyAndPrioritizesAttention() throw
 
     try expect(store.aggregateStatus(now: now.addingTimeInterval(4)) == .needsAttention, "expected permission request to outrank running")
     try expect(store.sessions(now: now.addingTimeInterval(4)).count == 2, "expected both sessions to be retained")
+}
+
+func testCodexActivityDoesNotTreatFailedToolAsAttention() throws {
+    let store = CodexActivityStore()
+    let now = Date(timeIntervalSince1970: 100)
+
+    store.record(CodexHookEvent(hookEventName: "PostToolUse", sessionID: "session-a", turnID: "turn-1", cwd: "/tmp/a", toolName: "exec_command", toolFailed: true), at: now)
+
+    try expect(store.aggregateStatus(now: now.addingTimeInterval(1)) == .running, "expected failed tool to remain running instead of red")
+}
+
+func testCodexActivitySummaryExplainsAttentionReason() throws {
+    let store = CodexActivityStore()
+    let now = Date(timeIntervalSince1970: 100)
+
+    store.record(CodexHookEvent(hookEventName: "PermissionRequest", sessionID: "session-a", turnID: "turn-1", cwd: "/tmp/a", toolName: "exec_command"), at: now)
+
+    let summary = store.summary(now: now.addingTimeInterval(1))
+    try expect(summary.status == .needsAttention, "expected permission request to need attention")
+    try expect(summary.menuTitle == "Activity: needs attention (exec_command)", "expected attention reason in menu title")
 }
 
 func testCodexHookEventParsesSessionKeyFromHookJSON() throws {
@@ -556,7 +626,10 @@ let tests = [
     ("local token usage cutoff", testLocalTokenUsageSkipsFilesOlderThanCutoff),
     ("local token usage text", testLocalTokenUsageCompactsCounts),
     ("rate limit client stdio fallback", testRateLimitClientFallsBackToStdioWhenControlSocketProxyCloses),
+    ("rate limit client process reuse", testRateLimitClientReusesStdioAppServerAcrossRefreshes),
     ("codex activity multi-session aggregation", testCodexActivityTracksSessionsIndependentlyAndPrioritizesAttention),
+    ("codex activity ignores failed tool attention", testCodexActivityDoesNotTreatFailedToolAsAttention),
+    ("codex activity attention summary", testCodexActivitySummaryExplainsAttentionReason),
     ("codex hook event parsing", testCodexHookEventParsesSessionKeyFromHookJSON),
     ("codex hook socket delivery", testCodexHookSocketDeliversEvents),
     ("codex hook installer", testCodexHookInstallerMergesHooksAndEnablesFeature)

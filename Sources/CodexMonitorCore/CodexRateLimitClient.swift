@@ -23,10 +23,12 @@ public enum CodexRateLimitClientError: LocalizedError {
     }
 }
 
-public struct CodexRateLimitClient {
+public final class CodexRateLimitClient {
     private let codexExecutablePath: String
     private let controlSocketPath: String
     private let timeoutSeconds: TimeInterval
+    private var rpc: CodexAppServerRPC?
+    private var rpcUsesControlSocket = false
 
     public init(
         codexExecutablePath: String = "/Applications/Codex.app/Contents/Resources/codex",
@@ -39,6 +41,20 @@ public struct CodexRateLimitClient {
     }
 
     public func readRateLimits() async throws -> RateLimitSnapshot {
+        if let rpc, rpc.isRunning {
+            let wasUsingControlSocket = rpcUsesControlSocket
+            do {
+                return try await requestRateLimits(using: rpc)
+            } catch {
+                resetRPC()
+                guard wasUsingControlSocket else {
+                    throw error
+                }
+                return try await readRateLimits(useControlSocket: false)
+            }
+        }
+
+        resetRPC()
         let shouldTryControlSocket = FileManager.default.fileExists(atPath: controlSocketPath)
         do {
             return try await readRateLimits(useControlSocket: shouldTryControlSocket)
@@ -50,20 +66,50 @@ public struct CodexRateLimitClient {
         }
     }
 
+    public func shutdown() {
+        resetRPC()
+    }
+
+    deinit {
+        shutdown()
+    }
+
     private func readRateLimits(useControlSocket: Bool) async throws -> RateLimitSnapshot {
-        let rpc = try CodexAppServerRPC(
+        do {
+            let rpc = try await currentRPC(useControlSocket: useControlSocket)
+            return try await requestRateLimits(using: rpc)
+        } catch {
+            resetRPC()
+            throw error
+        }
+    }
+
+    private func currentRPC(useControlSocket: Bool) async throws -> CodexAppServerRPC {
+        if let rpc, rpcUsesControlSocket == useControlSocket, rpc.isRunning {
+            return rpc
+        }
+
+        resetRPC()
+        let newRPC = try CodexAppServerRPC(
             codexExecutablePath: codexExecutablePath,
             controlSocketPath: controlSocketPath,
             useControlSocket: useControlSocket,
             timeoutSeconds: timeoutSeconds
         )
-        defer {
-            rpc.shutdown()
-        }
+        try await newRPC.initialize()
+        rpc = newRPC
+        rpcUsesControlSocket = useControlSocket
+        return newRPC
+    }
 
-        try await rpc.initialize()
+    private func requestRateLimits(using rpc: CodexAppServerRPC) async throws -> RateLimitSnapshot {
         let response = try await rpc.request(method: "account/rateLimits/read")
         return try RateLimitParser.parse(jsonRPCResponse: response)
+    }
+
+    private func resetRPC() {
+        rpc?.shutdown()
+        rpc = nil
     }
 }
 
@@ -76,6 +122,10 @@ private final class CodexAppServerRPC {
     private var stderrText = ""
     private var nextID = 1
     private let timeoutSeconds: TimeInterval
+
+    var isRunning: Bool {
+        process.isRunning
+    }
 
     init(
         codexExecutablePath: String,
@@ -117,7 +167,7 @@ private final class CodexAppServerRPC {
             params: [
                 "clientInfo": [
                     "name": "CodexMonitorMinibar",
-                    "version": "0.1.3"
+                    "version": "0.1.4"
                 ]
             ],
             timeoutSeconds: max(timeoutSeconds, 10)

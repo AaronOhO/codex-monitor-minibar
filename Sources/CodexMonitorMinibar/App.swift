@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var latestSnapshot: RateLimitSnapshot?
     private var latestTokenUsageSnapshot: LocalTokenUsageSnapshot?
     private var latestActivityStatus: CodexActivityStatus = .none
+    private var latestActivityMenuTitle = "Activity: none"
     private var latestError: String?
     private var latestTokenUsageError: String?
     private var latestLoginItemError: String?
@@ -57,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activityTimer?.invalidate()
         tokenUsageTimer?.invalidate()
         activitySocketServer?.stop()
+        client.shutdown()
     }
 
     @objc private func quit() {
@@ -148,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             addUsageUnavailableItem(to: menu, title: "Unavailable")
         }
         addLocalTokenUsageItems(to: menu)
+        menu.addItem(disabledItem(latestActivityMenuTitle))
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Refresh Now", action: #selector(refreshAllData), keyEquivalent: "r"))
@@ -303,7 +306,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshActivity() {
-        latestActivityStatus = activityStore.aggregateStatus()
+        let summary = activityStore.summary()
+        latestActivityStatus = summary.status
+        latestActivityMenuTitle = summary.menuTitle
         updateStatusImage(
             snapshot: latestSnapshot,
             error: latestError,
